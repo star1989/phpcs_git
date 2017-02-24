@@ -1,0 +1,51 @@
+#!/bin/bash
+#
+# check PHP code syntax error and standard with phpcs
+# author : star[github.com/star1989]
+# date : 2017-02-24
+PROJECT=$(git rev-parse --show-toplevel)
+cd $PROJECT
+SFILES=$(git diff --cached --name-only --diff-filter=ACMR HEAD | grep \\.php)
+TMP_DIR=$PROJECT."/tmp"
+ 
+# Determine if a file list is passed
+if [ "$#" -ne 0 ]
+then
+    exit 0
+fi
+echo "Checking PHP Lint..."
+for FILE in $SFILES
+do
+#    echo "php -l -d display_errors=0 ${FILE}" 
+#	echo "git show :$FILE > $TMP_DIR/$FILE"
+    php -l -d display_errors=0 $FILE
+    if [ $? != 0  ]
+    then
+        echo "Fix the error before commit."
+        exit 1
+    fi
+    FILES="$FILES $PROJECT/$FILE"
+done
+
+if [ "$FILES" != "" ]
+then
+    echo "Running Code Sniffer..."
+
+    TMP_DIR=/tmp/$(uuidgen)
+    mkdir -p $TMP_DIR
+    for FILE in $SFILES
+    do
+        mkdir -p $TMP_DIR/$(dirname $FILE)
+        git show :$FILE > $TMP_DIR/$FILE
+    done
+    phpcs --standard=PSR2 --encoding=utf-8 -n $TMP_DIR
+    PHPCS_ERROR=$?
+    rm -rf $TMP_DIR
+    if [ $PHPCS_ERROR != 0 ]
+    then
+        echo "Fix the error before commit."
+        exit 1
+    fi
+fi
+
+exit $?
