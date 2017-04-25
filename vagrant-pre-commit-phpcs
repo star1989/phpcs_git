@@ -1,0 +1,80 @@
+#!/bin/bash
+#
+# check PHP code syntax error and standard with phpcs
+# author : star[github.com/star1989]
+# date : 2017-04-25
+PROJECT=$(git rev-parse --show-toplevel)
+PROJECT_NAME=`basename ${PROJECT}`
+if [ $USER != 'vagrant' ]
+then
+    WEBPATH='/web/'
+    PROJECT_PATH=$WEBPATH"/"$PROJECT_NAME
+    vagrantID=`vagrant global-status|awk -F " " '{print $1}'|sed -n '3p'`
+    vagrant ssh $vagrantID -c "cd $PROJECT_PATH && $PROJECT_PATH/.git/hooks/pre-commit"
+    vagrant_status=$?
+    if [ $vagrant_status != 0 ]
+    then
+        echo "[$vagrant_status]Fix the error before commit."
+        exit 1
+    fi
+else
+    cd $PROJECT
+    SFILES=$(git diff --cached --name-only --diff-filter=ACMR HEAD | grep \\.php)
+    TMP_DIR=$PROJECT."/tmp"
+
+    # Determine if a file list is passed
+    if [ "$#" -ne 0 ]
+    then
+        exit 0
+    fi
+    echo "Checkout report dir..."
+    if [ -d report ]
+    then
+        echo "Delete report dir"
+        rm -rf report
+    fi
+    if [ ! -d report ]
+    then
+        echo "Create report dir"
+        mkdir report
+    fi
+    # --ignore-violations-on-exit can always return zero
+    # phpmd $PROJECT html cleancode,codesize,design,naming,unusedcode,controversial --reportfile $PROJECT/report/md.html --suffixes php --ignore-violations-on-exit &> /dev/null
+
+    echo "Checking PHP Lint..."
+    for FILE in $SFILES
+    do
+        php -l -d display_errors=0 $FILE
+        if [ $? != 0  ]
+        then
+            echo "Fix the error before commit."
+            exit 1
+        fi
+        FILES="$FILES $PROJECT/$FILE"
+    done
+
+    if [ "$FILES" != ""  ]
+    then
+        echo "Running Code Sniffer & MD..."
+
+        TMP_DIR=/tmp/$(uuidgen)
+        mkdir -p $TMP_DIR
+        for FILE in $SFILES
+        do
+            mkdir -p $TMP_DIR/$(dirname $FILE)
+            git show :$FILE > $TMP_DIR/$FILE
+            phpcbf --standard=PSR2 $FILE
+            phpmd $FILE html cleancode,codesize,design,naming,unusedcode,controversial --suffixes php --ignore-violations-on-exit >> $PROJECT/report/md.html
+        done
+        phpcs --standard=PSR2 --encoding=utf-8 -n $TMP_DIR > $PROJECT/report/standard.txt
+        PHPCS_ERROR=$?
+        rm -rf $TMP_DIR
+        if [ $PHPCS_ERROR != 0  ]
+        then
+            echo "Please look reports.Then fix the errors"
+            exit 1
+        fi
+    fi
+
+    exit 0
+fi
